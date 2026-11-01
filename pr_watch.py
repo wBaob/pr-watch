@@ -1,4 +1,3 @@
-"""Read-only GitHub pull request monitor. Python 3.10+, no dependencies."""
 import argparse
 import datetime
 import json
@@ -49,7 +48,7 @@ class GitHub:
 
 
 def ci_summary(checks, statuses):
-    """Aggregate head-commit checks and latest legacy statuses, not merge eligibility."""
+
     failed = {'failure', 'cancelled', 'timed_out', 'action_required', 'stale', 'startup_failure'}
     if any(c.get('conclusion') in failed for c in checks) or statuses['state'] == 'failure':
         return 'FAILING'
@@ -65,7 +64,7 @@ def ci_summary(checks, statuses):
 
 
 def review_summary(reviews):
-    # Comments do not revoke an earlier approval or change request.
+
     latest = {}
     for review in reviews:
         state = review['state']
@@ -105,7 +104,7 @@ def positive(value):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description='Contributor Inbox: local GitHub activity monitor')
     parser.add_argument('username', help='GitHub author to monitor')
     parser.add_argument('--limit', type=positive, default=10, help='maximum PRs, 1-100 (default: 10)')
     parser.add_argument('--json', action='store_true', help='emit a JSON report')

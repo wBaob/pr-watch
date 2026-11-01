@@ -6,3 +6,5 @@
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
 
 #demo-options{margin-bottom:18px;font-size:12px}#demo-options select{font-size:12px;padding:7px}
+
+.preferences{margin:0 0 20px;font-size:12px}.preferences form{max-width:550px;padding:12px 0}.preferences input:not([type=checkbox]){width:100%;margin-bottom:12px}

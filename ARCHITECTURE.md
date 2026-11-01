@@ -8,7 +8,7 @@ The service serializes synchronization and local actions with one lock. GET stat
 
 ## Why REST
 
-REST supports unauthenticated public data, including pull requests, check runs, combined legacy statuses, reviews, conversation comments and inline comments. Review-thread resolution is not provided by these REST collections. The application consistently labels that limitation; it does not infer resolved threads, author responsibility or merge eligibility. A future authenticated GraphQL adapter could supply review threads as an independent source without changing the baseline model.
+REST supports unauthenticated public data, including pull requests, check runs, combined legacy statuses, reviews, conversation comments and inline comments. Review-thread resolution is not provided by these REST collections. The application consistently labels that limitation; it does not infer resolved threads, author responsibility or merge eligibility. The optional GraphQL adapter supplies review threads as an independent source.
 
 API calls are serial, with 20-second per-request timeouts, pagination capped at 100 pages, at most 1000 search results, and no automatic retries. Check histories that reach the pagination cap fail explicitly. HTTP 403/429 establishes an API-wide cooldown using Retry-After and exhausted primary-limit reset headers, with a minimum 60 seconds. The next permitted attempt appears in the UI. A user can refresh later; repeated clicks do not bypass cooldown. Conditional GETs use a bounded, process-local ETag cache (500 entries). Restart clears that optimization but preserves snapshots. Redirects are restricted to HTTPS api.github.com to avoid credential forwarding elsewhere.
 
@@ -35,3 +35,11 @@ Loopback bind, exact Host allowlist, exact Origin, per-process random CSRF token
 ## Verification
 
 Offline Python tests exercise rules, storage, partial failures, cooldown, pagination, ETag behavior and HTTP boundaries. Frontend CI type-checks/builds and verifies committed JavaScript matches TypeScript. Browser QA is performed separately using the deterministic demo. A live public-data smoke test is a dated observation, not a dependency of CI. Official API references are linked in README.
+
+## Version 1.1
+
+An optional read-only GraphQL adapter fetches paginated review threads when GITHUB_TOKEN is configured. Each thread includes resolution, outdated-diff state, file/line and first-comment evidence. Partial/error responses never advance the thread baseline. REST remains the unauthenticated fallback. GraphQL has no mutations. Thread resolution does not establish merge readiness.
+
+The event journal now records individual check transitions, newly observed commits and thread resolution changes. Previously observed feedback remains accessible after disappearing from current source snapshots. Local preferences persist ignored bot logins, a preferred repository and change-request priority; they affect display only.
+
+The installable Python package includes static assets and provides contributor-inbox and pr-watch commands. Default databases live in the user application-data directory. SQLite backup uses the database backup API; JSON export is a separate inspection format. Frontend/browser CI uses local deterministic fixtures.

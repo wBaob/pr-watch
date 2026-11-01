@@ -2,6 +2,13 @@
   "name": "contributor-inbox",
   "private": true,
   "version": "1.0.0",
-  "scripts": {"build": "tsc", "check": "tsc --noEmit"},
-  "devDependencies": {"typescript": "~5.9.3"}
+  "scripts": {
+    "build": "tsc",
+    "check": "tsc --noEmit",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "typescript": "~5.9.3"
+  }
 }

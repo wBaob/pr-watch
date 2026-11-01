@@ -10,3 +10,9 @@ node_modules/
 *.sqlite3*
 output/
 .playwright-cli/
+
+*.egg-info/
+build/
+dist/
+test-results/
+playwright-report/

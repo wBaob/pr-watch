@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "contributor-inbox"
+version = "1.1.0"
+description = "A local attention queue for GitHub contributors"
+requires-python = ">=3.10"
+license = "MIT"
+
+[project.scripts]
+contributor-inbox = "inbox.server:main"
+pr-watch = "pr_watch:main"
+
+[tool.setuptools]
+packages = ["inbox", "inbox.web"]
+py-modules = ["pr_watch"]
+
+[tool.setuptools.package-data]
+"inbox.web" = ["*.html", "*.js", "*.css", "*.svg"]

@@ -10,7 +10,7 @@ Coverage includes CI reruns and legacy statuses, review decision transitions, de
 
 ## Browser QA
 
-Chromium through Playwright CLI, against the local Python service:
+Chromium browser checks, against the local Python service:
 
 - Live setup: enter wBaob → Refresh → two real public PRs, initial baseline, no historical feedback marked new.
 - Demo: Refresh → filter NEW_FEEDBACK → open details → Mark seen → feedback reason disappears → Snooze → reload/restart → Snoozed view retains deadline → Cancel snooze.
@@ -33,3 +33,9 @@ All required REST source collections were retrieved for this baseline. No GitHub
 ## Scope
 
 Developer Program registration, acceptance and badge issuance have not been performed or verified. This delivers the working integration and its source code, not a guarantee of program membership.
+
+## Version 1.1 validation
+
+29 Python tests include GraphQL pagination, null authors, rate-limited partial responses and token-free request prevention. Browser regression tests cover refresh/filter/details/seen/snooze/reload/preferences, mobile layout, untrusted text and unsafe URLs. The suite is part of GitHub Actions. The live token-enabled GraphQL path requires a user-configured token; fixture tests do not establish that a particular account has repository access.
+
+The packaged contributor-inbox command and SQLite backup were verified in an isolated virtual environment. Both automated Chromium browser tests passed using the installed Chrome channel. A live authorized GraphQL query for Amnezia PR #3321 returned successfully with zero review threads; nonempty and paginated responses are covered by fixtures.

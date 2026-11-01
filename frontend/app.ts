@@ -3,14 +3,14 @@ type PR = {title:string; html_url:string; number:number; draft:boolean; state:st
 type Reason = {code:string;text:string;url:string;at:string;facts:Record<string,unknown>};
 type Source = {data:unknown;observed_at:string;head_sha?:string};
 type Row = {key:string; sources:Record<string,Source>; errors:Record<string,{message:string;at:string}>; reasons:Reason[]; timeline:EventItem[]; observed_at:string; unread:boolean; snoozed:boolean; snoozed_until:string|null; ci:string;seq:number;seen_seq:number};
-type State = {username:string;demo:boolean;demo_scenario:string|null;csrf:string;busy:boolean;rows:Row[];sync:null|{first_sync:boolean;finished_at:string;warnings:string[];retry_at:string|null}};
+type State = {username:string;preferences:{ignored_bots?:string;pinned_repo?:string;changes_first?:boolean};threads_enabled:boolean;demo:boolean;demo_scenario:string|null;csrf:string;busy:boolean;rows:Row[];sync:null|{first_sync:boolean;finished_at:string;warnings:string[];retry_at:string|null}};
 const $ = <T extends HTMLElement=HTMLElement>(id:string) => document.getElementById(id) as T;
 const input = (id:string) => $(id) as HTMLInputElement;
 const esc = (value:unknown) => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 const date = (v:string) => v ? new Date(v).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'}) : 'Not observed';
 const safeURL = (raw:string) => {try{const u = new URL(raw);return u.protocol === 'https:' && u.hostname === 'github.com' && !u.username && !u.password && !u.port ? u.href : '';}catch{return '';}};
 const link = (url:string,label:string) => safeURL(url) ? `<a href="${esc(safeURL(url))}" target="_blank" rel="noopener noreferrer">${esc(label)} ↗</a>` : `<span>${esc(label)} (link unavailable)</span>`;
-const labels:Record<string,string> = {CI_FAILED:'× Checks unsuccessful',CHANGES_REQUESTED:'↺ Changes requested',NEW_FEEDBACK:'↳ New feedback',HEAD_CHANGED:'↑ New commits',AUTHOR_ACTIVITY:'↗ Author activity',INSUFFICIENT_DATA:'? Insufficient data',NO_ACTION:'✓ No attention signal'};
+const labels:Record<string,string> = {CI_FAILED:'× Checks unsuccessful',OPEN_THREADS:'↳ Unresolved discussion',CHANGES_REQUESTED:'↺ Changes requested',NEW_FEEDBACK:'↳ New feedback',HEAD_CHANGED:'↑ New commits',AUTHOR_ACTIVITY:'↗ Author activity',INSUFFICIENT_DATA:'? Insufficient data',NO_ACTION:'✓ No attention signal'};
 const order = Object.keys(labels);
 let state:State, tab='active', busy=false, selected:string|null=null;
 const dialog = $<HTMLDialogElement>('detail');
@@ -25,6 +25,9 @@ function notice(message:string,warn=false){$('notice').innerHTML=message ? `<div
 async function load(){
   state = await request('/api/state');
   if(document.activeElement !== input('username')) input('username').value=state.username;
+  input('ignored-bots').value=state.preferences.ignored_bots||'';
+  input('pinned-repo').value=state.preferences.pinned_repo||'';
+  input('changes-first').checked=!!state.preferences.changes_first;
   input('username').readOnly=state.demo;
   $('demo-options').hidden=!state.demo;
   if(state.demo)(input('scenario') as unknown as HTMLSelectElement).value=state.demo_scenario||'standard';
@@ -47,13 +50,15 @@ function prOf(row:Row){return row.sources.pr?.data as PR|undefined;}
 function badge(code:string){return `<span class="badge ${code==='CI_FAILED'?'bad':code==='INSUFFICIENT_DATA'||code==='CHANGES_REQUESTED'?'warn':''}">${esc(labels[code]||code)}</span>`;}
 function render(){
   const search=input('search').value.trim().toLowerCase(),repo=input('repo').value,reason=input('reason').value,draft=input('draft').value;
-  const rows=state.rows.filter(row=>{
+  const ignored=(state.preferences.ignored_bots||'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean);
+  const visible=state.rows.map(row=>{const reasons=row.reasons.filter(r=>!(r.code==='NEW_FEEDBACK' && r.facts.bot && ignored.includes(String(r.facts.actor||'').toLowerCase())));return {...row,reasons:reasons.length?reasons:[{code:'NO_ACTION',text:'No remaining attention signals after your local filters.',url:prOf(row)?.html_url||'',at:row.observed_at,facts:{}}]};});
+  const rows=visible.filter(row=>{
     const pr=prOf(row);if(!pr)return false;
     if(tab==='closed' ? pr.state==='open' : pr.state!=='open')return false;
     if(tab==='snoozed' ? !row.snoozed : tab!=='closed' && row.snoozed)return false;
     if(tab==='unread'&&!row.unread)return false;
     return (!search||(`${pr.title} ${row.key}`).toLowerCase().includes(search))&&(!repo||row.key.split('#')[0]===repo)&&(!reason||row.reasons.some(r=>r.code===reason))&&(!draft||(draft==='draft')===pr.draft);
-  }).sort((a,b)=>order.indexOf(a.reasons[0]?.code)-order.indexOf(b.reasons[0]?.code)||Number(b.unread)-Number(a.unread)||b.observed_at.localeCompare(a.observed_at));
+  }).sort((a,b)=>Number(b.key.split('#')[0]===state.preferences.pinned_repo)-Number(a.key.split('#')[0]===state.preferences.pinned_repo)||(state.preferences.changes_first?Number(b.reasons.some(r=>r.code==='CHANGES_REQUESTED'))-Number(a.reasons.some(r=>r.code==='CHANGES_REQUESTED')):0)||order.indexOf(a.reasons[0]?.code)-order.indexOf(b.reasons[0]?.code)||Number(b.unread)-Number(a.unread)||b.observed_at.localeCompare(a.observed_at));
   $('count').textContent=String(rows.length);
   $('list').innerHTML=rows.length ? rows.map(row=>{
     const pr=prOf(row)!,reason=row.reasons[0];
@@ -66,7 +71,7 @@ function showDetail(key:string){
   selected=key;
   const row=state.rows.find(r=>r.key===key),pr=row&&prOf(row);if(!row||!pr)return;
   const localFuture=new Date(Date.now()+86400000);localFuture.setMinutes(localFuture.getMinutes()-localFuture.getTimezoneOffset());
-  $('detail-body').innerHTML=`<p class="pr-meta">${esc(row.key)} · ${esc(pr.user.login)} · ${esc(pr.state)}</p><h2 id="detail-title">${esc(pr.title)}</h2>${link(pr.html_url,'Open on GitHub')}<p>Head <code>${esc(pr.head.sha.slice(0,12))}</code> · CI ${esc(row.ci)}. Head-commit signals do not establish merge readiness.</p><div class="detail-actions"><button id="seen">Mark seen</button><label><span class="sr">Snooze until local date and time</span><input id="snooze-time" type="datetime-local" value="${esc(localFuture.toISOString().slice(0,16))}"></label><button id="snooze">Snooze until…</button>${row.snoozed?'<button id="unsnooze">Cancel snooze</button>':''}</div>${row.snoozed?`<p>Snoozed until ${esc(date(row.snoozed_until!))}. New events are retained while snoozed.</p>`:''}<h3>Why this PR is here</h3>${row.reasons.map(r=>`<div class="reason">${badge(r.code)}<p>${esc(r.text)}</p>${link(r.url,'View evidence')}<small>${esc(date(r.at))} · ${esc(r.code)}</small></div>`).join('')}<h3>Source freshness</h3><ul class="source-status">${['pr','ci','reviews','comments','inline'].map(s=>`<li>${esc(s)}: ${row.errors[s]?'unavailable · '+esc(row.errors[s].message):row.sources[s]?'observed '+esc(date(row.sources[s].observed_at)):'not observed'}</li>`).join('')}</ul><p>Review-thread resolution is unavailable in REST mode. Comment order does not tell us whether a thread is resolved. Review counts do not establish reviewer authority or approval freshness.</p><h3>Activity & observed changes</h3><p>Historical activity is included for context. Changes since your local baseline are tracked separately; source time and observation time may differ.</p><ul class="timeline">${row.timeline.length?row.timeline.map(e=>`<li><time>${esc(date(e.at))}</time><p><strong>${esc(e.actor||e.kind)}${e.bot?' · bot':''}</strong>${e.seq?' · observed change':''}</p><p>${esc(e.text||e.kind)}</p>${link(e.url,'View source')}</li>`).join(''):'<li>No recorded activity. The first successful observation is the baseline.</li>'}</ul>`;
+  $('detail-body').innerHTML=`<p class="pr-meta">${esc(row.key)} · ${esc(pr.user.login)} · ${esc(pr.state)}</p><h2 id="detail-title">${esc(pr.title)}</h2>${link(pr.html_url,'Open on GitHub')}<p>Head <code>${esc(pr.head.sha.slice(0,12))}</code> · CI ${esc(row.ci)}. Head-commit signals do not establish merge readiness.</p><div class="detail-actions"><button id="seen">Mark seen</button><label><span class="sr">Snooze until local date and time</span><input id="snooze-time" type="datetime-local" value="${esc(localFuture.toISOString().slice(0,16))}"></label><button id="snooze">Snooze until…</button>${row.snoozed?'<button id="unsnooze">Cancel snooze</button>':''}</div>${row.snoozed?`<p>Snoozed until ${esc(date(row.snoozed_until!))}. New events are retained while snoozed.</p>`:''}<h3>Why this PR is here</h3>${row.reasons.map(r=>`<div class="reason">${badge(r.code)}<p>${esc(r.text)}</p>${link(r.url,'View evidence')}<small>${esc(date(r.at))} · ${esc(r.code)}</small></div>`).join('')}<h3>Changes since marked seen</h3><ul class="timeline">${(row as Row & {events:EventItem[]}).events.filter(e=>(e.seq||0)>row.seen_seq).map(e=>`<li><p>${esc(e.text||e.kind)}</p>${link(e.url,'View change')}</li>`).join('')||'<li>No unseen changes.</li>'}</ul><h3>Review discussions</h3>${row.sources.threads?((row.sources.threads.data as {resolved:boolean;outdated:boolean;path:string;line:number;body:string;url:string}[]).map(t=>`<div class="reason"><strong>${t.resolved?'Resolved':'Unresolved'}${t.outdated?' · outdated diff':''}</strong><p>${esc(t.path)}:${esc(t.line||'—')}</p><p>${esc(t.body)}</p>${link(t.url,'Open discussion')}</div>`).join('')||'<p>No review threads.</p>'):'<p>Requires a server-side token and a successful GraphQL refresh.</p>'}<h3>Source freshness</h3><ul class="source-status">${['pr','ci','reviews','comments','inline','threads','commits'].map(s=>`<li>${esc(s)}: ${row.errors[s]?'unavailable · '+esc(row.errors[s].message):row.sources[s]?'observed '+esc(date(row.sources[s].observed_at)):'not observed'}</li>`).join('')}</ul><p>${state.threads_enabled?'Thread state is available after a successful GraphQL fetch; check source freshness above.':'Review-thread resolution requires GITHUB_TOKEN on the server.'} Comment order does not establish resolution. Review counts do not establish reviewer authority or approval freshness.</p><h3>Activity & observed changes</h3><p>Historical activity is included for context. Changes since your local baseline are tracked separately; source time and observation time may differ.</p><ul class="timeline">${row.timeline.length?row.timeline.map(e=>`<li><time>${esc(date(e.at))}</time><p><strong>${esc(e.actor||e.kind)}${e.bot?' · bot':''}</strong>${e.seq?' · observed change':''}</p><p>${esc(e.text||e.kind)}</p>${link(e.url,'View source')}</li>`).join(''):'<li>No recorded activity. The first successful observation is the baseline.</li>'}</ul>`;
   $('seen').onclick=()=>action(key,'seen');
   $('snooze').onclick=()=>{const raw=input('snooze-time').value;const end=new Date(raw);if(!raw||!Number.isFinite(end.getTime())||end.getTime()<=Date.now()){notice('Choose a future snooze date.',true);return;}void action(key,'snooze',end.toISOString());};
   if($('unsnooze'))$('unsnooze').onclick=()=>action(key,'unsnooze');
@@ -92,3 +97,6 @@ const theme=localStorage.getItem('inbox-theme')||(matchMedia('(prefers-color-sch
 document.documentElement.dataset.theme=theme;
 $('theme').onclick=()=>{const value=document.documentElement.dataset.theme==='dark'?'light':'dark';document.documentElement.dataset.theme=value;localStorage.setItem('inbox-theme',value);};
 void load().catch(()=>notice('Could not reach the local server. Start python -m inbox.server and reload.',true));
+
+$('preferences').onsubmit=async e=>{e.preventDefault();try{await request('/api/preferences',{ignored_bots:input('ignored-bots').value,pinned_repo:input('pinned-repo').value,changes_first:input('changes-first').checked});await load();}catch(e){notice(String(e),true);}};
+$('export').onclick=async()=>{try{const data=await request('/api/export');const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='contributor-inbox-export.json';a.click();URL.revokeObjectURL(url);}catch(e){notice(String(e),true);}};

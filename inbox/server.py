@@ -1,4 +1,3 @@
-"""Loopback-only HTTP service. Run with python -m inbox.server [--demo]."""
 import argparse
 import json
 import mimetypes
@@ -12,7 +11,7 @@ from .demo import seed, USERNAME
 from .store import Store
 from .sync import Client, synchronize
 
-WEB = Path(__file__).resolve().parent.parent / 'web'
+WEB = Path(__file__).resolve().parent / 'web'
 
 
 class Application:
@@ -27,13 +26,13 @@ class Application:
     def state(self):
         username = self.store.setting('username') or ''
         return {'username': username, 'demo': self.demo, 'demo_scenario': self.store.setting('demo_scenario'), 'csrf': self.csrf, 'busy': self.lock.locked(),
-                'rows': self.store.view(username), 'sync': self.store.setting('sync:' + username)}
+                'preferences': self.store.setting('preferences') or {}, 'threads_enabled': bool(self.client.token), 'rows': self.store.view(username), 'sync': self.store.setting('sync:' + username)}
 
 
 def handler_for(app):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
-            pass  # Do not log GitHub metadata or query strings.
+            pass
 
         def send(self, code, data, content_type='application/json; charset=utf-8'):
             payload = json.dumps(data).encode() if content_type.startswith('application/json') else data
@@ -45,7 +44,10 @@ def handler_for(app):
             self.send_header('Referrer-Policy', 'no-referrer')
             self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
             self.end_headers()
-            self.wfile.write(payload)
+            try:
+                self.wfile.write(payload)
+            except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+                pass
 
         def trusted_host(self):
             return self.headers.get('Host') in {f'127.0.0.1:{self.server.server_port}', f'localhost:{self.server.server_port}'}
@@ -54,6 +56,8 @@ def handler_for(app):
             if not self.trusted_host():
                 return self.send(403, {'error': 'Untrusted host'})
             path = urllib.parse.urlsplit(self.path).path
+            if path == '/api/export':
+                return self.send(200, {'version': 1, 'username': app.store.setting('username'), 'rows': app.store.rows(app.store.setting('username') or '')})
             if path == '/api/state':
                 return self.send(200, app.state())
             assets = {'/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css', '/favicon.svg': 'favicon.svg'}
@@ -84,8 +88,12 @@ def handler_for(app):
                     finally:
                         app.lock.release()
                     return self.send(200, result)
+                if self.path == '/api/preferences':
+                    prefs = {'ignored_bots': str(body.get('ignored_bots', ''))[:1000], 'pinned_repo': str(body.get('pinned_repo', ''))[:200], 'changes_first': bool(body.get('changes_first'))}
+                    app.store.setting('preferences', prefs)
+                    return self.send(200, {'ok': True})
                 if self.path == '/api/action':
-                    # Serialize local actions with sync so a seen marker cannot race with a snapshot.
+
                     if not app.lock.acquire(blocking=False):
                         return self.send(409, {'error': 'Wait for the update to finish'})
                     try:
@@ -102,17 +110,34 @@ def handler_for(app):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description='Contributor Inbox: local GitHub activity monitor')
     parser.add_argument('--demo', action='store_true', help='synthetic data; no network')
     parser.add_argument('--port', type=int, default=8765)
     parser.add_argument('--db', type=Path, help='SQLite database path')
     parser.add_argument('--limit', type=int, choices=range(1, 1001), default=20, metavar='1..1000')
+    parser.add_argument('--open', action='store_true', help='open the browser on startup')
+    parser.add_argument('--backup', type=Path, help='back up the database and exit')
     args = parser.parse_args()
-    default_db = Path(__file__).resolve().parent.parent / '.data' / ('demo.sqlite3' if args.demo else 'inbox.sqlite3')
+    default_db = Path(os.environ.get('LOCALAPPDATA') or Path.home() / '.local/share') / 'contributor-inbox' / ('demo.sqlite3' if args.demo else 'inbox.sqlite3')
+    legacy = Path(__file__).resolve().parent.parent / '.data' / default_db.name
+    if not args.db and legacy.exists() and not default_db.exists():
+        import sqlite3
+        default_db.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(legacy) as old, sqlite3.connect(default_db) as new:
+            old.backup(new)
     app = Application(Store(args.db or default_db), args.demo, args.limit)
+    if args.backup:
+        import sqlite3
+        with app.store.connect() as source, sqlite3.connect(args.backup) as target:
+            source.backup(target)
+        print('Backup saved:', args.backup)
+        return
     server = ThreadingHTTPServer(('127.0.0.1', args.port), handler_for(app))
     server.daemon_threads = True
     print(f'Contributor Inbox: http://127.0.0.1:{server.server_port}' + (' (synthetic demo)' if args.demo else ''), flush=True)
+    if args.open:
+        import webbrowser
+        webbrowser.open(f'http://127.0.0.1:{server.server_port}')
     try:
         server.serve_forever()
     except KeyboardInterrupt:

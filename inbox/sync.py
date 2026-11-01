@@ -1,4 +1,3 @@
-"""Serial REST synchronization with conditional requests and explicit cooldowns."""
 import copy
 import datetime as dt
 import email.utils
@@ -10,6 +9,7 @@ import urllib.parse
 import urllib.request
 from pr_watch import APIError, GitHub
 from .store import utcnow
+from .threads import fetch_threads
 
 
 class TrustedRedirect(urllib.request.HTTPRedirectHandler):
@@ -72,7 +72,7 @@ class Client(GitHub):
 
 
 def compact(items):
-    # Store only the event fields the application needs.
+
     return [{k: x.get(k) for k in ['id', 'state', 'submitted_at', 'created_at', 'updated_at',
                                   'html_url', 'commit_id']} |
             {'body': (x.get('body') or '')[:1500],
@@ -82,11 +82,17 @@ def compact(items):
 
 def fetch_ci(api, root, sha):
     checks = api.pages(f'{root}/commits/{sha}/check-runs', key='check_runs', filter='latest')
-    # Exclude check output/logs and provider payloads from persistent state.
+
     checks = [{k: c.get(k) for k in ['id', 'name', 'status', 'conclusion', 'html_url']} |
               {'app': {'id': (c.get('app') or {}).get('id')}} for c in checks]
     statuses = api.get(f'{root}/commits/{sha}/status')
     return {'checks': checks, 'statuses': {k: statuses[k] for k in ['state', 'total_count']}}
+
+
+def fetch_commits(api, root, number, total):
+    if total > 250:
+        raise APIError('GitHub pull-commit endpoint is limited to 250 commits; previous commit baseline retained')
+    return [{'sha': c['sha'], 'url': c['html_url'], 'message': c['commit']['message'].split('\n')[0], 'at': c['commit']['committer']['date']} for c in api.pages(f'{root}/pulls/{number}/commits')]
 
 
 def synchronize(store, api, username, limit=20):
@@ -101,7 +107,7 @@ def synchronize(store, api, username, limit=20):
         search = api.get('/search/issues', q=f'is:pr is:open author:{username}',
                          sort='updated', order='desc', per_page=100)
         items = search['items']
-        # Additional search pages are fetched only if the configured cap needs them.
+
         for page in range(2, min(10, (min(search['total_count'], limit) + 99) // 100) + 1):
             result = api.get('/search/issues', q=f'is:pr is:open author:{username}',
                              sort='updated', order='desc', per_page=100, page=page)
@@ -139,9 +145,12 @@ def synchronize(store, api, username, limit=20):
             sha = pr['head']['sha']
             sources = [
                 ('ci', lambda: fetch_ci(api, root, sha)),
+                ('commits', lambda: fetch_commits(api, root, number, raw.get('commits', 0))),
                 ('reviews', lambda: compact(api.pages(f'{root}/pulls/{number}/reviews'))),
                 ('comments', lambda: compact(api.pages(f'{root}/issues/{number}/comments'))),
                 ('inline', lambda: compact(api.pages(f'{root}/pulls/{number}/comments')))]
+            if api.token:
+                sources.append(('threads', lambda: fetch_threads(api, repo, number)))
             for source, fetch in sources:
                 try:
                     store.save_source(username, key, source, fetch(), head_sha=sha if source == 'ci' else None)

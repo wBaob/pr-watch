@@ -24,4 +24,6 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - run: npm run build
-      - run: git diff --exit-code -- web/app.js
+      - run: git diff --exit-code -- inbox/web/app.js
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e

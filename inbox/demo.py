@@ -1,4 +1,3 @@
-"""Deterministic fictional data. Separate database, no network requests."""
 from .store import utcnow
 
 USERNAME = 'demo-contributor'

@@ -1,10 +1,9 @@
-"""SQLite v1 storage; atomic per-source observations and local state."""
 import contextlib
 import datetime as dt
 import json
 import sqlite3
 from pathlib import Path
-from .rules import feedback, reasons, ci_state
+from .rules import feedback, reasons, ci_state, latest_checks
 
 
 def utcnow():
@@ -74,6 +73,16 @@ class Store:
                             if x['id'] in old and x.get('state') != old[x['id']].get('state'):
                                 changes.append({'id': f'review-state:{x["id"]}:{x["state"]}', 'kind': 'review_state',
                                                 'at': now, 'url': x['html_url'], 'text': 'Review decision changed to ' + x['state']})
+                elif previous and source == 'commits':
+                    old = {x['sha'] for x in previous['data']}
+                    for commit in data:
+                        if commit['sha'] not in old:
+                            changes.append({'id': 'commit:' + commit['sha'], 'kind': 'commit', 'at': commit['at'], 'url': commit['url'], 'text': 'New commit: ' + commit['message']})
+                elif previous and source == 'threads':
+                    old = {x['id']: x for x in previous['data']}
+                    for thread in data:
+                        if thread['id'] not in old or thread['resolved'] != old[thread['id']]['resolved']:
+                            changes.append({'id': f'thread:{thread["id"]}:{now}', 'kind': 'thread', 'at': now, 'url': thread['url'], 'text': ('Resolved' if thread['resolved'] else 'Unresolved') + ' discussion: ' + thread['path']})
                 elif previous and source == 'pr':
                     for field, kind in [('head', 'head'), ('state', 'state'), ('merged', 'merged')]:
                         old = previous['data'][field]
@@ -86,7 +95,15 @@ class Store:
                                             'text': f'{kind} changed: {old} → {val}'})
                 elif previous and source == 'ci' and (previous.get('head_sha') != head_sha or ci_state(previous['data']) != ci_state(data)):
                     changes.append({'id': f'ci:{head_sha}:{now}', 'kind': 'ci', 'at': now,
-                                    'url': key_url(key) + '/checks', 'text': f'CI observed: {ci_state(data)}'})
+                                    'url': key_url(key) + '/checks', 'text': f'CI changed: {ci_state(previous["data"])} → {ci_state(data)}'})
+                if previous and source == 'ci':
+                    oldchecks = {(c.get('app', {}).get('id'), c['name']): c for c in latest_checks(previous['data']['checks'])}
+                    for check in latest_checks(data['checks']):
+                        old = oldchecks.get((check.get('app', {}).get('id'), check['name']), {})
+                        before = old.get('conclusion') or old.get('status')
+                        after = check.get('conclusion') or check.get('status')
+                        if before != after:
+                            changes.append({'id': f'check:{check["id"]}:{now}', 'kind': 'check', 'at': now, 'url': check.get('html_url') or key_url(key), 'text': f'{check["name"]}: {before or "not observed"} → {after}'})
                 known = {e['id'] for e in row['events']}
                 for event in changes:
                     if event['id'] not in known:
@@ -94,7 +111,7 @@ class Store:
                         event.update(seq=row['seq'], observed_at=now)
                         row['events'].append(event)
                         known.add(event['id'])
-                # First success for each source is its baseline; never emits historical feedback.
+
             db.execute('INSERT OR REPLACE INTO prs VALUES (?,?,?)', (owner.lower(), key, json.dumps(row)))
 
     def action(self, owner, key, action, until=None):
@@ -126,7 +143,7 @@ class Store:
             ci = row['sources'].get('ci')
             pr = row['sources'].get('pr', {}).get('data')
             row['ci'] = ci_state(ci['data']) if ci and pr and ci.get('head_sha') == pr['head']['sha'] and 'ci' not in row['errors'] else 'UNKNOWN'
-            row['timeline'] = sorted(feedback(row['sources']) + [e for e in row['events'] if e['kind'] not in {'comments', 'inline', 'reviews'}],
+            row['timeline'] = sorted(feedback(row['sources']) + [dict(e, text='[Previously observed] ' + e.get('text', '')) for e in row['events'] if e['kind'] not in {'comments', 'inline', 'reviews'} or e['id'] not in {f['id'] for f in feedback(row['sources'])}],
                                      key=lambda e: e['at'] or '', reverse=True)
         return rows
 

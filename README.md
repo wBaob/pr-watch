@@ -24,24 +24,38 @@ Demo mode has a separate database, makes no API requests and uses clearly fictio
 
 ![Synthetic contributor inbox](docs/demo-desktop.png)
 
+## Install and launch
+
+```sh
+python -m pip install .
+contributor-inbox --open
+```
+
+Upgrade from a checkout with `git pull --ff-only` followed by `python -m pip install --upgrade .`. Existing source-checkout databases migrate to the user data directory on first launch if no new database already exists. Original files are preserved. You can always select an older database with `--db PATH`.
+
+For a consistent SQLite backup, stop other instances and run `contributor-inbox --backup PATH`. Restore by launching with `--db PATH`. Queue preferences and event history are included. JSON export is available under **Queue preferences & export**; treat exports as private if monitoring private repositories.
+
 ## What you can do
 
 - Filter open PRs by repository, attention reason, draft and title/number.
 - Inspect CI failures, change requests, newly observed feedback and head changes, with evidence links.
 - Read a PR timeline and per-source observation timestamps; see missing or inaccessible sources explicitly.
+- Read unresolved/resolved GraphQL discussions, file/line locations and excerpts when a server token is configured. Failed or partial thread fetches keep the previous baseline.
+- See individual check transitions, newly observed commits and retained historical events.
+- Prioritize a repository, put change requests first, and suppress attention signals from selected bot logins in local preferences. Bot activity remains available in the timeline.
 - Mark changes seen. Persistent failures and change requests stay visible; later events become unseen again.
 - Snooze a PR until a date/time, find it in Snoozed, and cancel. New events are retained while snoozed.
 - Reopen the app and keep snapshots, local actions and transition history.
 - Use light/dark themes and a responsive keyboard-accessible interface.
 
-The first successful fetch of each source is a baseline, not a flood of new notifications. REST mode cannot determine review-thread resolution. Nothing in this app asserts merge readiness or that a maintainer owes a reply.
+The first successful fetch of each source is a baseline, not a flood of new notifications. With GITHUB_TOKEN, GraphQL retrieves review-thread resolution and code locations. Without a token, REST remains available and thread state is explicitly unavailable. Nothing in this app asserts merge readiness or that a maintainer owes a reply.
 
 ## Configuration and privacy
 
 | Option | Default | Purpose |
 | --- | --- | --- |
 | `--port` | `8765` | Local HTTP port |
-| `--db` | `.data/inbox.sqlite3` | Local SQLite path; demo uses `.data/demo.sqlite3` |
+| `--db` | `%LOCALAPPDATA%/contributor-inbox/inbox.sqlite3` (Windows) or `~/.local/share/contributor-inbox/inbox.sqlite3` | Local SQLite path; demo uses `demo.sqlite3` in the same application data directory |
 | `--limit` | `20` | Discover up to 1–1000 open PRs per refresh; warn when limited |
 | `--demo` | off | Synthetic offline workspace |
 | `GITHUB_TOKEN` | unset | Optional server-side read token |
@@ -54,16 +68,18 @@ Sources update independently; failed fetches preserve their last successful snap
 
 ## Development
 
-Python remains dependency-free at runtime. TypeScript is the only npm development dependency. Compiled `web/app.js` is committed so users can run without Node.
+Python remains dependency-free at runtime. TypeScript is the only npm development dependency. Compiled `inbox/web/app.js` is committed so users can run without Node.
 
 ```sh
 npm ci --ignore-scripts
 npm run check
 npm run build
 python -m unittest -v
+npx playwright install chromium
+npm run test:e2e
 ```
 
-After editing TypeScript, commit its compiled JavaScript too; CI checks they match. Tests run offline and without tokens. See [ARCHITECTURE.md](ARCHITECTURE.md) for rules, schema version/migrations, security boundaries and limitations, and [verification notes](docs/VERIFICATION.md) for dated browser/live checks.
+After editing TypeScript, commit its compiled JavaScript too; CI checks they match. Python and browser tests use local fixtures without GitHub tokens or network API calls. Installing development dependencies and the test browser requires a network connection. See [ARCHITECTURE.md](ARCHITECTURE.md) for rules, schema version/migrations, security boundaries and limitations, and [verification notes](docs/VERIFICATION.md) for dated browser/live checks.
 
 ## Local API
 

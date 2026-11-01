@@ -1,7 +1,6 @@
-"""Pure attention rules. Every reason references observed source evidence."""
 from pr_watch import ci_summary
 
-ORDER = ['CI_FAILED', 'CHANGES_REQUESTED', 'NEW_FEEDBACK', 'HEAD_CHANGED',
+ORDER = ['CI_FAILED', 'OPEN_THREADS', 'CHANGES_REQUESTED', 'NEW_FEEDBACK', 'HEAD_CHANGED',
          'AUTHOR_ACTIVITY', 'INSUFFICIENT_DATA', 'NO_ACTION']
 THREAD_LIMIT = 'Thread resolution is unavailable in REST mode; comments do not establish resolved threads.'
 
@@ -11,7 +10,7 @@ def ci_state(data):
 
 
 def latest_checks(checks):
-    # Latest per app/name: a rerun supersedes an older failed run.
+
     latest = {}
     for c in checks:
         key = (c.get('app', {}).get('id'), c['name'])
@@ -61,10 +60,13 @@ def reasons(row, now):
     if ci and ci.get('head_sha') == pr['head']['sha'] and ci_state(ci['data']) == 'FAILING':
         bad = [c for c in latest_checks(ci['data']['checks']) if c.get('conclusion') in
                {'failure', 'cancelled', 'timed_out', 'action_required', 'stale', 'startup_failure'}]
-        # Reason points to current CI context, rather than an obsolete rerun.
+
         add('CI_FAILED', 'Head-commit checks have an unsuccessful result.',
             (bad[0].get('html_url') if bad else None) or pr['html_url'] + '/checks', facts={'head_sha': pr['head']['sha'],
                                             'observed_unsuccessful_runs': len(bad)})
+    for thread in sources.get('threads', {}).get('data', []):
+        if not thread['resolved']:
+            add('OPEN_THREADS', f'Unresolved discussion in {thread["path"]}' + (f':{thread["line"]}' if thread.get('line') else '') + (' (outdated diff)' if thread.get('outdated') else ''), thread['url'], thread.get('at'), {'thread_id': thread['id']})
     reviews = sources.get('reviews', {}).get('data', [])
     for review in decisions(reviews):
         if review['state'] == 'CHANGES_REQUESTED':
@@ -76,7 +78,7 @@ def reasons(row, now):
         if event['kind'] in {'comments', 'inline', 'reviews'}:
             if event['actor'].casefold() != pr['user']['login'].casefold():
                 add('NEW_FEEDBACK', f'New {"bot " if event.get("bot") else ""}feedback from {event["actor"]}. A response may be useful.',
-                    event['url'], event['at'], {'event_id': event['id'], 'bot': event.get('bot', False)})
+                    event['url'], event['at'], {'event_id': event['id'], 'bot': event.get('bot', False), 'actor': event['actor']})
             else:
                 add('AUTHOR_ACTIVITY', 'New activity by the PR author; this does not prove feedback is addressed.',
                     event['url'], event['at'], {'event_id': event['id']})
@@ -86,8 +88,11 @@ def reasons(row, now):
     missing = [s for s in ['pr', 'ci', 'reviews', 'comments', 'inline'] if s not in sources or s in row['errors']]
     if ci and ci.get('head_sha') != pr['head']['sha'] and 'ci' not in missing:
         missing.append('ci for current head')
+    for extra in ['threads', 'commits']:
+        if extra in row['errors']:
+            missing.append(extra)
     if missing:
         add('INSUFFICIENT_DATA', 'Some sources are missing or stale: ' + ', '.join(missing), facts={'sources': missing})
     if not out:
-        add('NO_ACTION', 'No attention signal in the successfully observed REST sources. ' + THREAD_LIMIT)
+        add('NO_ACTION', 'No attention signal in the observed sources. ' + (THREAD_LIMIT if 'threads' not in sources else 'Review threads were retrieved; no merge-readiness decision is implied.'))
     return sorted(out, key=lambda r: ORDER.index(r['code']))

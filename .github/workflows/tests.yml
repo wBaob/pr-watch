@@ -14,3 +14,14 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - run: python -m unittest -v
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: git diff --exit-code -- web/app.js

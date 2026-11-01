@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Contributor Inbox</title><meta name="description" content="A local attention queue for your GitHub contributions."><link rel="icon" href="/favicon.svg"><link rel="stylesheet" href="/style.css"><script type="module" src="/app.js"></script></head>
+<body>
+<div class="shell">
+<header><a class="brand" href="/" aria-label="Contributor Inbox home"><span class="brandmark" aria-hidden="true">↳</span><span>Contributor <strong>Inbox</strong></span></a><div class="header-right"><span id="mode" class="mode">LOCAL · READ ONLY</span><button id="theme" class="quiet" aria-label="Switch color theme">◐ Theme</button></div></header>
+<main>
+<section class="heading"><div><p class="eyebrow">YOUR OPEN-SOURCE WORKSPACE</p><h1>Your contributions, in focus.</h1><p class="subtitle">Your pull requests, what changed, and the evidence behind it.</p></div><form id="setup"><label for="username">GitHub username</label><div class="input-group"><span aria-hidden="true">@</span><input id="username" name="username" placeholder="your-username" maxlength="39" required pattern="[A-Za-z0-9][A-Za-z0-9\-]{0,38}" autocomplete="off"><button id="refresh" type="submit">↻ Refresh inbox</button></div><small>Public data works without a token. Updates happen only when you ask.</small></form></section>
+<div id="demo-options" hidden><label for="scenario">Synthetic scenario </label><select id="scenario"><option value="standard">Standard inbox</option><option value="empty">No pull requests</option><option value="offline">Offline / stale snapshot</option><option value="rate-limit">Rate limit</option><option value="closed">Closed / merged (open that view)</option><option value="long-title">Long titles</option></select><small>Choose a scenario, then refresh. All data stays fictional.</small></div>
+<div id="notice" role="status" aria-live="polite"></div>
+<section class="workspace" aria-label="Pull request inbox">
+<div class="workspace-head"><div><h2>Your inbox <span id="count">0</span></h2><p id="updated">Connect a username to get started.</p></div><span class="sort-note">Sorted by evidence-based attention</span></div>
+<div class="filters"><label class="search"><span class="sr">Search pull requests</span><input id="search" type="search" placeholder="Search title or #number…"></label><label><span class="sr">Repository</span><select id="repo"><option value="">All repositories</option></select></label><label><span class="sr">Reason</span><select id="reason"><option value="">All reasons</option><option value="CI_FAILED">Checks unsuccessful</option><option value="CHANGES_REQUESTED">Changes requested</option><option value="NEW_FEEDBACK">New feedback</option><option value="HEAD_CHANGED">New commits</option><option value="AUTHOR_ACTIVITY">Author activity</option><option value="INSUFFICIENT_DATA">Insufficient data</option><option value="NO_ACTION">No attention signal</option></select></label><label><span class="sr">Draft status</span><select id="draft"><option value="">All PRs</option><option value="ready">Non-draft</option><option value="draft">Draft</option></select></label></div>
+<nav class="tabs" aria-label="Inbox views"><button data-tab="active" aria-pressed="true">Active</button><button data-tab="unread" aria-pressed="false">Unseen changes</button><button data-tab="snoozed" aria-pressed="false">Snoozed</button><button data-tab="closed" aria-pressed="false">Closed / merged</button></nav>
+<div id="list" aria-live="polite"></div>
+<div class="workspace-foot"><span><i class="dot"></i> Your local actions stay on this computer</span><span>Signals explain activity. They do not decide merge readiness.</span></div>
+</section>
+<footer><span>Built for the work between opening a PR and getting it merged.</span><a href="https://github.com/wBaob/pr-watch" target="_blank" rel="noopener noreferrer">Source & documentation ↗</a></footer>
+</main></div>
+<dialog id="detail" aria-labelledby="detail-title"><div class="dialog-top"><span class="eyebrow">PULL REQUEST DETAILS</span><button id="close" class="quiet">Close ✕</button></div><div id="detail-body"></div></dialog>
+</body></html>

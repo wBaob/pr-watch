@@ -5,3 +5,8 @@ __pycache__/
 .env.*
 !.env.example
 report*.json
+node_modules/
+.data/
+*.sqlite3*
+output/
+.playwright-cli/
